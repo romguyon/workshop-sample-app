@@ -36,6 +36,36 @@ test('API lists rooms, creates a booking, and retrieves it', async (t) => {
   assert.deepEqual(await listed.json(), [result]);
 });
 
+test('API returns 409 with a conflict message when a booking overlaps an existing booking in the same room', async (t) => {
+  const request = await setup(t);
+  const first = await request('/api/bookings', post(booking));
+  assert.equal(first.status, 201);
+  const conflicting = await request('/api/bookings', post({
+    ...booking, startTime: '2030-06-12T09:30:00Z', endTime: '2030-06-12T09:45:00Z',
+  }));
+  assert.equal(conflicting.status, 409);
+  assert.deepEqual(await conflicting.json(), { error: 'This room is already booked from 09:00 to 10:00 UTC.' });
+  const listed = await request('/api/bookings?roomId=cedar&date=2030-06-12');
+  assert.equal((await listed.json()).length, 1);
+});
+
+test('API allows a booking that starts exactly when another ends in the same room', async (t) => {
+  const request = await setup(t);
+  await request('/api/bookings', post(booking));
+  const backToBack = await request('/api/bookings', post({
+    ...booking, startTime: booking.endTime, endTime: '2030-06-12T11:00:00Z',
+  }));
+  assert.equal(backToBack.status, 201);
+});
+
+test('API allows overlapping bookings in different rooms', async (t) => {
+  const request = await setup(t);
+  const first = await request('/api/bookings', post(booking));
+  assert.equal(first.status, 201);
+  const second = await request('/api/bookings', post({ ...booking, roomId: 'maple' }));
+  assert.equal(second.status, 201);
+});
+
 test('API returns useful validation errors and does not create invalid bookings', async (t) => {
   const request = await setup(t);
   const response = await request('/api/bookings', post({ ...booking, endTime: booking.startTime }));
